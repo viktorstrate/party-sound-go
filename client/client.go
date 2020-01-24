@@ -1,26 +1,41 @@
 package main
 
 import (
+	"fmt"
+	"io"
 	"net/http"
+	"strconv"
 
 	"github.com/hajimehoshi/oto"
 )
 
 func main() {
 
-	resp, err := http.Get("localhost:8080/samplerate")
+	resp, err := http.Get("http://localhost:8080/audio")
 	if err != nil {
 		chk(err)
 	}
-	defer resp.Body.Close()
 
-	samplerate := string(resp)
-
-	p, err := oto.NewPlayer(d.SampleRate(), 2, 2, 8192)
+	sampleStr := resp.Header.Get("X-Samplerate")
+	if len(sampleStr) == 0 {
+		panic("Sample rate header was not set")
+	}
+	sampleRate, err := strconv.Atoi(sampleStr)
 	if err != nil {
-		return err
+		chk(err)
+	}
+
+	fmt.Printf("Samplerate: %d\n", sampleRate)
+
+	p, err := oto.NewPlayer(sampleRate, 2, 2, 8192)
+	if err != nil {
+		chk(err)
 	}
 	defer p.Close()
+
+	io.Copy(p, resp.Body)
+
+	fmt.Println("Done")
 }
 
 func chk(err error) {
