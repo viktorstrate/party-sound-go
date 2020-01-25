@@ -6,50 +6,56 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sync"
+	"time"
 
 	"github.com/hajimehoshi/go-mp3"
-	"github.com/hajimehoshi/oto"
 )
 
 const sampleRate = 44100
 const seconds = 1
 
-func main() {
+type SongData struct {
+	buffer    bytes.Buffer
+	decoder   mp3.Decoder
+	timestamp time.Time
+	lock      sync.Mutex
+}
 
+func loadSongData() *SongData {
 	f, err := os.Open("music.mp3")
 	if err != nil {
 		chk(err)
 	}
 	defer f.Close()
 
-	mp3Decoder, err := mp3.NewDecoder(f)
+	mp3decoder, err := mp3.NewDecoder(f)
 	var mp3buffer bytes.Buffer
 
 	fmt.Println("Filling mp3 buffer")
 
-	io.Copy(&mp3buffer, mp3Decoder)
+	io.Copy(&mp3buffer, mp3decoder)
 
-	fmt.Println("Starting player")
-
-	player, err := oto.NewPlayer(sampleRate, 2, 2, 8192)
-	if err != nil {
-		chk(err)
+	song_data := SongData{
+		buffer:    mp3buffer,
+		decoder:   *mp3decoder,
+		timestamp: time.Now(),
 	}
-	defer player.Close()
 
-	io.Copy(player, &mp3buffer)
+	return &song_data
+}
+
+func main() {
+
+	song_data := loadSongData()
 
 	http.HandleFunc("/audio", func(w http.ResponseWriter, r *http.Request) {
 
 		fmt.Println("Client streaming")
 
-		if err != nil {
-			chk(err)
-		}
-
 		w.Header().Set("Connection", "Keep-Alive")
 		w.Header().Set("Transfer-Encoding", "chunked")
-		w.Header().Set("X-Samplerate", fmt.Sprint(mp3Decoder.SampleRate()))
+		w.Header().Set("X-Samplerate", fmt.Sprint(song_data.decoder.SampleRate()))
 		w.Header().Set("X-Start-Time", "100")
 
 		fmt.Println("Stream ended")
