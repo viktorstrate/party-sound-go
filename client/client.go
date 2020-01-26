@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
@@ -12,7 +13,16 @@ import (
 
 func main() {
 
-	resp, err := http.Get("http://localhost:8080/audio")
+	host := "127.0.0.1"
+
+	if len(os.Args) == 2 {
+		host = os.Args[1]
+	}
+
+	url := fmt.Sprintf("http://%s:8080/audio", host)
+	fmt.Printf("Connecting to: %s\n", url)
+
+	resp, err := http.Get(url)
 	if err != nil {
 		chk(err)
 	}
@@ -41,15 +51,15 @@ func main() {
 
 	startDelay := startTime.Sub(time.Now())
 	startTimer := time.NewTimer(startDelay)
-	fmt.Printf("Start delay %d ms", startDelay/time.Millisecond)
+	fmt.Printf("Start delay %f ms\n", float64(startDelay)/float64(time.Millisecond))
 
-	<-startTimer.C
 	p, err := oto.NewPlayer(sampleRate, 2, 2, 8192)
 	if err != nil {
 		chk(err)
 	}
 	defer p.Close()
 
+	<-startTimer.C
 	io.Copy(p, resp.Body)
 
 	fmt.Println("Done")

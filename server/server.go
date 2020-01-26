@@ -91,8 +91,8 @@ func main() {
 		w.Header().Set("X-Samplerate", fmt.Sprint(song_data.decoder.SampleRate()))
 
 		timeDrift := time.Now().Sub(song_data.timestamp_update)
-		fmt.Printf("Time drift: %d", timeDrift)
 
+		fmt.Printf("Time drift: %f ms", float64(timeDrift)/float64(time.Millisecond))
 		startTime := song_data.timestamp
 		startTime = startTime.Add(TIME_DELAY)
 		startTime = startTime.Add(timeDrift)
