@@ -55,14 +55,22 @@ func start_streamer(song_data *SongData, data_channels *[]chan []byte, decode_mu
 
 			decode_mutex.Lock()
 
+			var client_wg sync.WaitGroup
+			client_wg.Add(len(*data_channels))
+
 			// Send chunk to connected clients
 			for _, client := range *data_channels {
-				select {
-				case client <- chunk:
-				case <-timeout_timer.C:
-					fmt.Println("Client chunk timed out")
-				}
+				go func(client chan []byte, timeout_timer *time.Timer) {
+					select {
+					case client <- chunk:
+					case <-timeout_timer.C:
+						fmt.Println("Client chunk timed out")
+					}
+					client_wg.Done()
+				}(client, timeout_timer)
 			}
+
+			client_wg.Wait()
 
 			// fmt.Printf("Read %d bytes, duration %d ms\n", bytes, duration/time.Millisecond)
 			song_data.timestamp = song_data.timestamp.Add(chunk_duration)
