@@ -42,23 +42,30 @@ func start_streamer(song_data *SongData, data_channels *[]chan []byte, decode_mu
 
 	for true {
 		for song_data.timestamp.Sub(time.Now()) < 0 {
-			decode_mutex.Lock()
-
-			// Send chunk
+			// Decode chunk from mp3
 			chunk := make([]byte, CHUNK_SIZE)
 			bytes, err := song_data.decoder.Read(chunk)
 			if err != nil {
 				chk(err)
 			}
 
+			// Calculate chunk chunk_duration
+			var chunk_duration time.Duration = time.Duration(float64(time.Second) * float64(bytes) / float64(song_data.decoder.SampleRate()) / 4.0)
+			timeout_timer := time.NewTimer(time.Second)
+
+			decode_mutex.Lock()
+
+			// Send chunk to connected clients
 			for _, client := range *data_channels {
-				client <- chunk
+				select {
+				case client <- chunk:
+				case <-timeout_timer.C:
+					fmt.Println("Client chunk timed out")
+				}
 			}
 
-			var duration time.Duration = time.Duration(float64(time.Second) * float64(bytes) / float64(song_data.decoder.SampleRate()) / 4.0)
-
 			// fmt.Printf("Read %d bytes, duration %d ms\n", bytes, duration/time.Millisecond)
-			song_data.timestamp = song_data.timestamp.Add(duration)
+			song_data.timestamp = song_data.timestamp.Add(chunk_duration)
 			song_data.timestamp_update = time.Now()
 
 			decode_mutex.Unlock()
@@ -80,7 +87,7 @@ func main() {
 
 	http.HandleFunc("/audio", func(w http.ResponseWriter, r *http.Request) {
 
-		fmt.Println("Client streaming")
+		fmt.Println("Client connected")
 
 		w.Header().Set("Connection", "Keep-Alive")
 		w.Header().Set("Transfer-Encoding", "chunked")
@@ -92,7 +99,7 @@ func main() {
 
 		timeDrift := time.Now().Sub(song_data.timestamp_update)
 
-		fmt.Printf("Time drift: %f ms", float64(timeDrift)/float64(time.Millisecond))
+		fmt.Printf("Time drift: %f ms\n", float64(timeDrift)/float64(time.Millisecond))
 		startTime := song_data.timestamp
 		startTime = startTime.Add(TIME_DELAY)
 		startTime = startTime.Add(timeDrift)
@@ -101,10 +108,12 @@ func main() {
 
 		client_chan := make(chan []byte)
 		data_channels = append(data_channels, client_chan)
+		fmt.Printf("Total streaming clients: %d\n", len(data_channels))
 
 		decode_mutex.Unlock()
 
 		defer func() {
+
 			decode_mutex.Lock()
 			defer decode_mutex.Unlock()
 
@@ -121,8 +130,11 @@ func main() {
 				return
 			}
 
+			close(client_chan)
+
 			// Remove channel from array
 			data_channels[index] = data_channels[len(data_channels)-1]
+			data_channels[len(data_channels)-1] = nil
 			data_channels = data_channels[:len(data_channels)-1]
 
 			fmt.Println("Client disconnect cleanup succeeded")
@@ -131,6 +143,7 @@ func main() {
 
 		for true {
 			chunk := <-client_chan
+
 			_, err := w.Write(chunk)
 			if err != nil {
 				fmt.Println("Could not write chunk to client:")
